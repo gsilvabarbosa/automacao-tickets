@@ -30,6 +30,7 @@ MENU_PAGINAS = [
     'Reincidência',
     'Diagnóstico',   
     'Tendências',
+    'Validação de Motivos',  # Fase 3 — Etapa 2
 ]
 
 # ==================== STATUS ====================
@@ -64,6 +65,7 @@ MENU_GRUPOS = [
             'Reincidência',
             'Diagnóstico',
             'Tendências',
+            'Validação de Motivos',
         ],
     },
     {
