@@ -133,7 +133,7 @@ def classificar_filas(df_auditoria):
 # ==================== RENDERIZAÇÃO ====================
 
 
-def render():
+def render(df_filtrado):
     st.title('🎯 Validação de Motivos Reais')
     st.markdown(
         'Validação orientada a decisões para mapeamento de motivos reais '
