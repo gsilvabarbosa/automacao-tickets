@@ -301,11 +301,18 @@ def main():
             caminho_xlsx = caminho_csv
 
         # Salvar também os tickets com cluster atribuído (para uso na Fase 6/7)
-        df_cluster_ids = pd.concat([df_outros_cluster[['id','cluster']], df_retorno_cluster[['id','cluster']]], ignore_index=True) if len(df_outros) >= 30 and len(df_retorno) >= 10 else pd.DataFrame()
-        if not df_cluster_ids.empty:
+        dfs_ids = []
+        if len(df_outros) >= 30 and not df_outros_cluster.empty:
+            dfs_ids.append(df_outros_cluster[['id', 'cluster']])
+        if len(df_retorno) >= 10 and not df_retorno_cluster.empty:
+            dfs_ids.append(df_retorno_cluster[['id', 'cluster']])
+        if dfs_ids:
+            df_cluster_ids = pd.concat(dfs_ids, ignore_index=True)
             caminho_ids = ARTEFATOS / f'tickets_clusters_{timestamp}.csv'
             df_cluster_ids.to_csv(caminho_ids, index=False, encoding='utf-8')
-            print(f'💾 IDs + clusters salvos: {caminho_ids}')
+            print(f'💾 IDs + clusters salvos: {caminho_ids} ({len(df_cluster_ids)} tickets)')
+        else:
+            print('⚠️  Não há clusters com tickets suficientes para salvar vínculo ticket→cluster.')
 
         print('\n📝 PRÓXIMO PASSO: revisar os motivos sugeridos e adicionar os aprovados')
         print('   à config/taxonomia_motivos.yaml antes da Fase 3.')
