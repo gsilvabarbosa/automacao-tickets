@@ -1,10 +1,11 @@
 # ============================================================
 # dashboard/data.py — Carregamento e cache de dados
 # ============================================================
-# Conecta ao banco em 3 modos:
-#   1. DATABASE_URL (env var) — Railway
-#   2. Streamlit Secrets      — Streamlit Cloud
-#   3. SQLite local           — dev / testes
+# Conecta ao banco em 4 modos:
+#   1. FORCE_SQLITE=1 (env var) — força SQLite local, ignora PostgreSQL remoto
+#   2. DATABASE_URL (env var)   — Railway / banco remoto
+#   3. Streamlit Secrets        — Streamlit Cloud
+#   4. SQLite local             — dev / testes (fallback)
 # ============================================================
 
 import os
@@ -19,12 +20,21 @@ from sqlalchemy import create_engine
 def _obter_database_url():
     """
     Tenta obter a URL do banco em ordem de prioridade:
-        1. Streamlit Secrets (formato [connections.postgresql] url = ...)
-        2. Streamlit Secrets (chave direta DATABASE_URL)
-        3. Variável de ambiente (Railway)
-        4. SQLite local (fallback para desenvolvimento)
+        1. Variável de ambiente FORCE_SQLITE=1 — força SQLite local
+        2. Streamlit Secrets (formato [connections.postgresql] url = ...)
+        3. Streamlit Secrets (chave direta DATABASE_URL)
+        4. Variável de ambiente DATABASE_URL (Railway)
+        5. SQLite local (fallback para desenvolvimento)
     """
-    # 1. Streamlit Secrets — formato [connections.postgresql]
+    # 1. Forçar SQLite local (ignora banco remoto)
+    if os.environ.get('FORCE_SQLITE', '').strip() in ('1', 'true', 'yes', 'sim'):
+        sqlite_path = Path(__file__).resolve().parent.parent / 'dados' / 'tickets.db'
+        if sqlite_path.exists():
+            st.info(f'ℹ️ Usando SQLite local (FORCE_SQLITE): {sqlite_path.name}')
+            return f'sqlite:///{sqlite_path}'
+        st.warning('⚠️ FORCE_SQLITE=1 definido, mas banco local não encontrado.')
+
+    # 2. Streamlit Secrets — formato [connections.postgresql]
     try:
         url = st.secrets["connections"]["postgresql"]["url"]
         if url:
@@ -32,7 +42,7 @@ def _obter_database_url():
     except (KeyError, FileNotFoundError, Exception):
         pass
 
-    # 2. Streamlit Secrets — chave direta DATABASE_URL
+    # 3. Streamlit Secrets — chave direta DATABASE_URL
     try:
         url = st.secrets.get("DATABASE_URL")
         if url:
@@ -40,12 +50,12 @@ def _obter_database_url():
     except Exception:
         pass
 
-    # 3. Variável de ambiente (Railway)
+    # 4. Variável de ambiente (Railway)
     url = os.environ.get('DATABASE_URL')
     if url:
         return url
 
-    # 4. Fallback: SQLite local (só pra DEV)
+    # 5. Fallback: SQLite local (só pra DEV)
     sqlite_path = Path(__file__).resolve().parent.parent / 'dados' / 'tickets.db'
     if sqlite_path.exists():
         st.info(f'ℹ️ Usando SQLite local: {sqlite_path.name}')
