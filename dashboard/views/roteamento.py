@@ -2,9 +2,13 @@
 # dashboard/pages/roteamento.py
 # ============================================================
 
-import streamlit as st
+import io
+import re
+from datetime import date, datetime, timedelta
+
 import pandas as pd
 import plotly.express as px
+import streamlit as st
 
 from components_grafo import (
     render_grafo, render_legenda, render_arvore_ticket_sqlalchemy,
@@ -20,12 +24,19 @@ from config import COR_BAR, COR_DANGER, COR_TEXT_SEC
 from data import carregar_movimentacoes, carregar_mensagens, carregar_analistas
 
 
+def _parse_ids(texto):
+    """Extrai IDs numéricos de um texto (aceita vírgula, espaço, ; ou quebra de linha)."""
+    if not texto or not texto.strip():
+        return []
+    partes = re.split(r'[\s,;]+', texto.strip())
+    return [int(p) for p in partes if p.strip().isdigit()]
+
+
 def render(df):
     page_header('Roteamento', 'e Gargalos',
                 'Fluxo dos tickets entre analistas e identificação de gargalos.')
 
     # ---------- Carrega movimentações e mensagens ----------
-    from data import carregar_movimentacoes, carregar_mensagens
     movs = carregar_movimentacoes()
     msgs = carregar_mensagens()
 
@@ -107,7 +118,6 @@ def render(df):
         movs_sorted['data_movimentacao'] - movs_sorted['data_anterior']
     ).dt.total_seconds() / 3600
 
-
     gaps = movs_sorted.dropna(subset=['horas_parado'])
     gaps = gaps[gaps['horas_parado'] > 24].copy()
     gaps['dias_parado'] = (gaps['horas_parado'] / 24).round(1)
@@ -119,7 +129,6 @@ def render(df):
         top_gaps.columns = ['Ticket', 'Quem recebeu', 'Dias parado']
         st.dataframe(top_gaps, use_container_width=True, hide_index=True)
 
-        # ---------- Distribuição de gaps ----------
         st.markdown('')
         painel_title('Distribuição de <b>Gaps</b>')
 
@@ -172,7 +181,6 @@ def render(df):
             for _, r in top_msg.iterrows()
         ])
 
-        # Insight sobre mensagens
         media_msg = msgs.groupby('ticket_id').size().mean()
         if media_msg > 3:
             callout(
@@ -190,22 +198,18 @@ def render(df):
                 '</div>',
                 unsafe_allow_html=True)
 
-    from data import carregar_analistas
-    from datetime import date, timedelta
-
     df_analistas = carregar_analistas()
 
     if df_analistas.empty:
         callout('info', 'Info',
                 'Sem dados de analistas. Rode `python scripts/carregar_analistas.py`.')
     else:
-        # ---------- Filtros do Grafo ----------
         st.markdown('**Filtros do Grafo**')
         col_f1, col_f2, col_f3 = st.columns(3)
 
         with col_f1:
             hoje = date.today()
-            periodo = st.date_input(
+            periodo_grafo = st.date_input(
                 'Período',
                 value=(hoje - timedelta(days=90), hoje),
                 key='grafo_periodo',
@@ -225,18 +229,15 @@ def render(df):
                 key='grafo_empresa',
             )
 
-        # Aplica filtros
         df_movs_filt = movs_ok.copy()
 
-        # Período
-        if len(periodo) == 2:
-            ini, fim = periodo
+        if len(periodo_grafo) == 2:
+            ini, fim = periodo_grafo
             df_movs_filt = df_movs_filt[
                 (df_movs_filt['data_movimentacao'].dt.date >= ini) &
                 (df_movs_filt['data_movimentacao'].dt.date <= fim)
             ]
 
-        # Empresa
         if empresa_filtro != 'Todas':
             mapa_emp = dict(zip(df_analistas['nome'], df_analistas['empresa_tipo']))
             df_movs_filt = df_movs_filt[
@@ -291,6 +292,257 @@ def render(df):
             render_arvore_ticket_sqlalchemy(ticket_id, df_analistas)
         except Exception as e:
             st.error(f'❌ Erro ao renderizar árvore: {e}')
+
+    separador()
+
+    # ==================== CONSULTA DE TICKETS POR LISTA ====================
+    painel_title('Consulta de <b>Tickets</b>')
+    st.markdown(
+        '<div class="page-caption" style="margin-top:-14px;">'
+        'Cole uma lista de IDs para ver o <b>status atual</b> e os '
+        '<b>andamentos</b> de cada um.'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+    # ---------- Inputs em uma linha ----------
+    col_ids, col_periodo = st.columns([3, 1])
+
+    with col_ids:
+        ids_input = st.text_area(
+            'IDs dos Tickets',
+            placeholder='111718, 111755, 112634, 112254, ...',
+            height=100,
+            key='consulta_ids_input',
+            label_visibility='collapsed',
+        )
+
+    with col_periodo:
+        periodo_opcao = st.selectbox(
+            'Andamentos dos últimos...',
+            options=['3 dias', '7 dias', '15 dias', '30 dias', '90 dias', 'Tudo'],
+            index=0,
+            key='consulta_periodo',
+        )
+
+    # ---------- Botões ----------
+    col_btn_analisar, col_btn_limpar, _ = st.columns([1, 1, 4])
+    with col_btn_analisar:
+        analisar = st.button('🔍 Analisar', use_container_width=True,
+                              key='btn_analisar_ids', type='primary')
+    with col_btn_limpar:
+        limpar = st.button('🗑️ Limpar', use_container_width=True,
+                            key='btn_limpar_ids')
+
+    if limpar:
+        st.session_state.pop('consulta_resultado', None)
+        st.rerun()
+
+    # ---------- Processamento ----------
+    if analisar and ids_input.strip():
+        ids_busca = _parse_ids(ids_input)
+
+        if not ids_busca:
+            st.warning('⚠️ Nenhum ID válido encontrado.')
+        else:
+            mapa_dias = {
+                '3 dias': 3, '7 dias': 7, '15 dias': 15,
+                '30 dias': 30, '90 dias': 90, 'Tudo': None,
+            }
+            dias = mapa_dias[periodo_opcao]
+
+            # ==================== ABA 1: STATUS ATUAL ====================
+            df_tickets = df[df['id'].isin(ids_busca)].copy()
+            movs_busca = movs_ok[movs_ok['ticket_id'].isin(ids_busca)].copy()
+
+            status_rows = []
+            for tid in ids_busca:
+                t = df_tickets[df_tickets['id'] == tid]
+                movs_t = movs_busca[movs_busca['ticket_id'] == tid]
+
+                if t.empty:
+                    status_rows.append({
+                        'Ticket': tid,
+                        'Título': '(não encontrado)',
+                        'Status': '-',
+                        'Categoria': '-',
+                        'Última Movimentação': '-',
+                        'Último Analista': '-',
+                        'Total de Movs': 0,
+                    })
+                    continue
+
+                ultima_data = '-'
+                ultimo_autor = '-'
+                if not movs_t.empty:
+                    ultima = movs_t.sort_values('data_movimentacao').iloc[-1]
+                    if pd.notna(ultima['data_movimentacao']):
+                        ultima_data = ultima['data_movimentacao'].strftime('%d/%m/%Y %H:%M')
+                    ultimo_autor = ultima['autor'] or '-'
+
+                status_rows.append({
+                    'Ticket': tid,
+                    'Título': (
+                        str(t['titulo'].iloc[0])[:80]
+                        if pd.notna(t['titulo'].iloc[0]) else '-'
+                    ),
+                    'Status': (
+                        t['status'].iloc[0]
+                        if pd.notna(t['status'].iloc[0]) else '-'
+                    ),
+                    'Categoria': (
+                        t['categoria'].iloc[0]
+                        if pd.notna(t['categoria'].iloc[0]) else '-'
+                    ),
+                    'Última Movimentação': ultima_data,
+                    'Último Analista': ultimo_autor,
+                    'Total de Movs': len(movs_t),
+                })
+
+            df_status = pd.DataFrame(status_rows)
+
+            # ==================== ABA 2: ANDAMENTOS ====================
+            movs_periodo = movs_busca.copy()
+            if dias is not None:
+                data_limite = datetime.now() - timedelta(days=dias)
+                movs_periodo = movs_periodo[
+                    movs_periodo['data_movimentacao'] >= data_limite
+                ]
+
+            movs_periodo = movs_periodo.sort_values(
+                ['ticket_id', 'data_movimentacao']
+            ).reset_index(drop=True)
+
+            titulos = df[['id', 'titulo']].rename(columns={'id': 'ticket_id'})
+            movs_export = movs_periodo.merge(titulos, on='ticket_id', how='left')
+
+            df_andamentos = pd.DataFrame({
+                'Ticket': movs_export['ticket_id'],
+                'Título': movs_export['titulo'].apply(
+                    lambda x: str(x)[:80] if pd.notna(x) else '-'
+                ),
+                'Data': movs_export['data_movimentacao'].apply(
+                    lambda x: x.strftime('%d/%m/%Y %H:%M') if pd.notna(x) else '-'
+                ),
+                'Analista': movs_export['autor'].fillna('-'),
+                'De Status': movs_export['de_status'].fillna('-'),
+                'Para Status': movs_export['para_status'].fillna('-'),
+                'Comentário': movs_export['comentario'].apply(
+                    lambda x: str(x)[:300] if pd.notna(x) else ''
+                ),
+            })
+
+            # ==================== KPIs ====================
+            encontrados = len(df_status[df_status['Título'] != '(não encontrado)'])
+            tickets_com_mov = movs_periodo['ticket_id'].nunique()
+
+            st.markdown('')
+            col_k1, col_k2, col_k3, col_k4 = st.columns(4)
+            with col_k1:
+                kpi('Tickets Solicitados', f'{len(ids_busca)}')
+            with col_k2:
+                kpi('Encontrados', f'{encontrados}',
+                    pill='OK' if encontrados == len(ids_busca) else 'Atenção',
+                    pill_tipo='positive' if encontrados == len(ids_busca) else 'negative')
+            with col_k3:
+                kpi(f'Com Andamento ({periodo_opcao})', f'{tickets_com_mov}')
+            with col_k4:
+                kpi('Total de Andamentos', f'{len(df_andamentos)}')
+
+            separador()
+
+            # ==================== ABAS ====================
+            aba_status, aba_andamentos = st.tabs([
+                f'📋 Status Atual ({len(df_status)})',
+                f'📜 Andamentos ({periodo_opcao}) — {len(df_andamentos)}',
+            ])
+
+            with aba_status:
+                st.dataframe(
+                    df_status,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        'Ticket': st.column_config.NumberColumn('Ticket', width='small'),
+                        'Título': st.column_config.TextColumn('Título', width='large'),
+                        'Status': st.column_config.TextColumn('Status', width='small'),
+                        'Categoria': st.column_config.TextColumn('Categoria', width='medium'),
+                        'Última Movimentação': st.column_config.TextColumn('Última Mov.', width='medium'),
+                        'Último Analista': st.column_config.TextColumn('Último Analista', width='medium'),
+                        'Total de Movs': st.column_config.NumberColumn('Total Movs', width='small'),
+                    },
+                )
+
+            with aba_andamentos:
+                if df_andamentos.empty:
+                    st.info(f'📭 Nenhum andamento nos últimos {periodo_opcao}.')
+                else:
+                    st.dataframe(
+                        df_andamentos,
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            'Ticket': st.column_config.NumberColumn('Ticket', width='small'),
+                            'Título': st.column_config.TextColumn('Título', width='large'),
+                            'Data': st.column_config.TextColumn('Data', width='medium'),
+                            'Analista': st.column_config.TextColumn('Analista', width='medium'),
+                            'De Status': st.column_config.TextColumn('De Status', width='small'),
+                            'Para Status': st.column_config.TextColumn('Para Status', width='small'),
+                            'Comentário': st.column_config.TextColumn('Comentário', width='large'),
+                        },
+                    )
+
+            # ==================== DOWNLOAD EXCEL ====================
+            st.markdown('')
+            col_dl1, col_dl2, _ = st.columns([1, 1, 4])
+
+            with col_dl1:
+                buffer = io.BytesIO()
+                with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                    df_status.to_excel(writer, sheet_name='Status Atual', index=False)
+                    df_andamentos.to_excel(
+                        writer,
+                        sheet_name=f'Andamentos {periodo_opcao}',
+                        index=False,
+                    )
+                buffer.seek(0)
+
+                st.download_button(
+                    '📥 Baixar Excel',
+                    data=buffer.getvalue(),
+                    file_name=f'consulta_tickets_{pd.Timestamp.now():%Y%m%d_%H%M}.xlsx',
+                    mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    use_container_width=True,
+                    key='download_consulta_excel',
+                    type='primary',
+                )
+
+            with col_dl2:
+                csv_status = df_status.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    '📥 Baixar CSV (Status)',
+                    data=csv_status,
+                    file_name=f'status_tickets_{pd.Timestamp.now():%Y%m%d_%H%M}.csv',
+                    mime='text/csv',
+                    use_container_width=True,
+                    key='download_consulta_csv',
+                )
+
+            # Salva no session_state
+            st.session_state['consulta_resultado'] = {
+                'status': df_status,
+                'andamentos': df_andamentos,
+                'periodo': periodo_opcao,
+            }
+
+    elif 'consulta_resultado' in st.session_state:
+        res = st.session_state['consulta_resultado']
+        st.info(
+            f'📊 Resultado anterior: {len(res["status"])} tickets, '
+            f'{len(res["andamentos"])} andamentos ({res["periodo"]}). '
+            f'Clique em "Limpar" para recomeçar.'
+        )
+        st.dataframe(res['status'], use_container_width=True, hide_index=True)
 
     separador()
 
