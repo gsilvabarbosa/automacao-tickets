@@ -27,6 +27,9 @@ venv/
 *.sav
 *.joblib
 
+# ============ ARTEFATOS DE MONITORAMENTO ============
+*.json
+
 # ============ SEGREDOS ============
 .streamlit/secrets.toml
 .env

@@ -19,12 +19,14 @@ Não quebra nada do pipeline nem do dashboard. Mudança aditiva.
 
 import streamlit as st
 import pandas as pd
+import json
 from pathlib import Path
 from datetime import datetime
 
 # ==================== PATHS ====================
 RAIZ = Path(__file__).resolve().parent.parent.parent
 ARTEFATOS = RAIZ / 'scripts_treinamento' / 'artefatos'
+DECISOES_PATH = ARTEFATOS / 'decisoes_validacao.json'
 
 
 # ==================== CARREGAMENTO DE DADOS ====================
@@ -272,6 +274,9 @@ def render(df_filtrado):
                     if decisao != 'Pendente':
                         st.success(f'Decisão registrada: {decisao}')
 
+    # Exportar rótulos humanos para treinamento
+    _render_export_rotulos_humanos()
+
 
 # ==================== COMPONENTES AUXILIARES ====================
 
@@ -423,21 +428,105 @@ def _render_validacao_individual(df_rotulos):
             st.divider()
 
 
-def _registrar_decisao(cluster_id, decisao, valor, fila):
-    """Registra uma decisão do analista no session_state (persistência simples)."""
-    if 'decisoes_motivos' not in st.session_state:
-        st.session_state.decisoes_motivos = []
+def _carregar_decisoes_salvas():
+    """Carrega decisões previamente salvas em arquivo."""
+    if DECISOES_PATH.exists():
+        try:
+            with open(DECISOES_PATH, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception:
+            return []
+    return []
 
-    st.session_state.decisoes_motivos.append({
+
+def _salvar_decisao(decisao):
+    """Persiste uma decisão em arquivo JSON para Active Learning."""
+    decisoes = _carregar_decisoes_salvas()
+    decisoes.append(decisao)
+    try:
+        with open(DECISOES_PATH, 'w', encoding='utf-8') as f:
+            json.dump(decisoes, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        st.error(f'Erro ao salvar decisão: {e}')
+
+
+def _registrar_decisao(cluster_id, decisao, valor, fila):
+    """Registra uma decisão do analista, persistindo em arquivo para Active Learning."""
+    if 'decisoes_motivos' not in st.session_state:
+        st.session_state.decisoes_motivos = _carregar_decisoes_salvas()
+
+    decisao_obj = {
         'cluster_id': cluster_id,
         'decisao': decisao,
         'valor': valor,
         'fila': fila,
         'timestamp': datetime.now().isoformat(),
-    })
+    }
+
+    st.session_state.decisoes_motivos.append(decisao_obj)
+    _salvar_decisao(decisao_obj)
     st.success(f'Decisão "{decisao}" registrada para o cluster {cluster_id}.')
 
     # Exibir decisões registradas na sessão
     with st.expander('Decisões registradas nesta sessão', expanded=False):
         for d in reversed(st.session_state.decisoes_motivos[-10:]):
             st.write(f"• Cluster {d['cluster_id']} — {d['decisao']} ({d['fila']})")
+
+
+# ==================== EXPORTAR RÓTULOS PARA TREINAMENTO ====================
+
+
+def _render_export_rotulos_humanos():
+    """Renderiza seção para exportar decisões como rótulos humanos (Active Learning)."""
+    st.divider()
+    st.subheader('🔄 Exportar Rótulos para Treinamento (Active Learning)')
+    st.caption(
+        'Use as decisões validadas pelos analistas para gerar rótulos humanos '
+        'que podem retreinar o modelo de mapeamento de motivos.'
+    )
+
+    decisoes_salvas = _carregar_decisoes_salvas()
+    if not decisoes_salvas:
+        st.info('Nenhuma decisão válida ainda. Valide alguns clusters primeiro.')
+        return
+
+    df_decisoes = pd.DataFrame(decisoes_salvas)
+    n_aprovadas = len(df_decisoes[df_decisoes['decisao'] == 'aprovar'])
+    n_dividir = len(df_decisoes[df_decisoes['decisao'] == 'dividir'])
+    n_descartar = len(df_decisoes[df_decisoes['decisao'] == 'descartar'])
+    n_motivo_valido = len(df_decisoes[df_decisoes['decisao'] == 'motivo_validado'])
+
+    col_e1, col_e2, col_e3, col_e4 = st.columns(4)
+    with col_e1:
+        st.metric('Total de decisões', len(decisoes_salvas))
+    with col_e2:
+        st.metric('Aprovar', n_aprovadas)
+    with col_e3:
+        st.metric('Dividir', n_dividir)
+    with col_e4:
+        st.metric('Motivo validado', n_motivo_valido)
+
+    # Gerar CSV de rótulos humanos a partir das decisões "motivo_validado"
+    rotulos_humanos = df_decisoes[df_decisoes['decisao'] == 'motivo_validado'].copy()
+    if not rotulos_humanos.empty:
+        rotulos_export = rotulos_humanos[['cluster_id', 'valor', 'timestamp']].copy()
+        rotulos_export.columns = ['cluster_id', 'motivo_correto', 'timestamp']
+        rotulos_export['origem'] = 'humano'
+
+        csv_bytes = rotulos_export.to_csv(index=False, encoding='utf-8').encode('utf-8')
+        st.download_button(
+            label='📥 Baixar rótulos humanos (CSV)',
+            data=csv_bytes,
+            file_name=f'rotulos_humanos_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv',
+            mime='text/csv',
+            help='Este CSV pode ser usado como entrada para retreinar o modelo de mapeamento de motivos.',
+        )
+        st.info(
+            'Os rótulos humanos têm prioridade sobre os rótulos fracos (regras) '
+            'no treinamento supervisionado.'
+        )
+    else:
+        st.info(
+            'Nenhum motivo validado ainda. Use o campo "Motivo validado" nos cards '
+            'de cluster para gerar rótulos humanos.'
+        )

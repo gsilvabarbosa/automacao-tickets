@@ -31,6 +31,7 @@ MENU_PAGINAS = [
     'Diagnóstico',   
     'Tendências',
     'Validação de Motivos',  # Fase 3 — Etapa 2
+    'Monitoramento',         # Fase 3 — Etapa 5
 ]
 
 # ==================== STATUS ====================
@@ -66,6 +67,7 @@ MENU_GRUPOS = [
             'Diagnóstico',
             'Tendências',
             'Validação de Motivos',
+            'Monitoramento',
         ],
     },
     {

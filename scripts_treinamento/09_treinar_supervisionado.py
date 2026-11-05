@@ -75,26 +75,132 @@ def encontrar_rotulos_mais_recentes():
     )
 
 
-def carregar_base_rotulos():
-    """Carrega a base de rótulos (proxy para rótulos humanos)."""
-    caminho = encontrar_rotulos_mais_recentes()
-    print(f'📂 Base de rótulos: {caminho.name}')
-    df = pd.read_csv(caminho)
-    print(f'📊 Total de rótulos: {len(df)}')
+def encontrar_rotulos_humanos_mais_recentes():
+    """Encontra o CSV de rótulos humanos exportado da interface de validação."""
+    fixo = ARTEFATOS / 'rotulos_humanos.csv'
+    if fixo.exists():
+        return fixo
+    candidatos = sorted(
+        ARTEFATOS.glob('rotulos_humanos_*.csv'),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    if candidatos:
+        return candidatos[0]
+    return None
 
-    # Mantém apenas tickets com texto útil e motivo atribuído
+
+def encontrar_vinculo_clusters_mais_recentes():
+    """Encontra o arquivo que mapeia ticket_id -> cluster_id."""
+    candidatos = sorted(
+        ARTEFATOS.glob('tickets_clusters_*.csv'),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    if candidatos:
+        return candidatos[0]
+    return None
+
+
+def carregar_base_rotulos():
+    """Carrega a base de rótulos combinando rótulos fracos (regras) com
+    rótulos humanos (validação dos analistas via interface).
+
+    Regras de prioridade:
+      1. Rótulo humano (validação via interface) — prioridade máxima
+      2. Rótulo fraco (regras de taxonomia) — fallback
+    """
+    # 1. Carrega rótulos fracos (base)
+    caminho_fracos = encontrar_rotulos_mais_recentes()
+    print(f'📂 Rótulos fracos: {caminho_fracos.name}')
+    df = pd.read_csv(caminho_fracos)
+    print(f'📊 Total de rótulos fracos: {len(df)}')
+
+    # Mantém apenas tickets com texto útil
     df = df[df['texto_util'] == True].copy()
-    df = df[df['motivo_id'].notna() & (df['motivo_id'] != '')].copy()
-    df = df[df['motivo_id'] != 'outros'].copy()
-    df = df[df['motivo_id'] != 'sem_texto_suficiente'].copy()
+
+    # Coluna de origem (regra = rótulo fraco, humano = validado por analista)
+    if 'origem' not in df.columns:
+        df['origem'] = 'regra'
 
     # Converte created_data para datetime
     if 'criado_data' in df.columns:
         df['criado_data'] = pd.to_datetime(df['criado_data'], errors='coerce')
 
+    # 2. Carrega rótulos humanos (se existirem)
+    caminho_humanos = encontrar_rotulos_humanos_mais_recentes()
+    df_humanos = None
+    if caminho_humanos:
+        df_humanos = pd.read_csv(caminho_humanos)
+        print(f'📂 Rótulos humanos: {caminho_humanos.name} ({len(df_humanos)} entradas)')
+
+    # 3. Carrega vínculo ticket -> cluster (para aplicar rótulos humanos por cluster)
+    caminho_vinculo = encontrar_vinculo_clusters_mais_recentes()
+    df_vinculo = None
+    if caminho_vinculo:
+        df_vinculo = pd.read_csv(caminho_vinculo)
+        print(f'📂 Vínculo ticket->cluster: {caminho_vinculo.name} ({len(df_vinculo)} entradas)')
+
+    # Garante coluna ticket_id para o merge com vínculo
+    if 'ticket_id' not in df.columns and 'id' in df.columns:
+        df['ticket_id'] = df['id']
+
+    # 4. Aplica rótulos humanos sobre os rótulos fracos
+    n_sobrescritos = 0
+    if df_humanos is not None and df_vinculo is not None:
+        # Normaliza colunas do vínculo (id -> ticket_id, cluster -> cluster_id)
+        col_map = {}
+        if 'ticket_id' not in df_vinculo.columns and 'id' in df_vinculo.columns:
+            col_map['id'] = 'ticket_id'
+        if 'cluster_id' not in df_vinculo.columns and 'cluster' in df_vinculo.columns:
+            col_map['cluster'] = 'cluster_id'
+        if col_map:
+            df_vinculo = df_vinculo.rename(columns=col_map)
+
+        # Prepara mapeamento cluster_id -> motivo_correto
+        cluster_para_motivo = dict(
+            zip(df_humanos['cluster_id'], df_humanos['motivo_correto'])
+        )
+
+        # Une tickets com clusters
+        df_com_cluster = df.merge(
+            df_vinculo[['ticket_id', 'cluster_id']],
+            on='ticket_id',
+            how='left',
+        )
+
+        # Aplica motivo humano onde houver
+        mask_tem_cluster = df_com_cluster['cluster_id'].notna()
+        mask_tem_motivo_humano = df_com_cluster['cluster_id'].isin(
+            cluster_para_motivo.keys()
+        )
+        mask_aplicar = mask_tem_cluster & mask_tem_motivo_humano
+
+        if mask_aplicar.any():
+            motivos_humanos = df_com_cluster.loc[
+                mask_aplicar, 'cluster_id'
+            ].map(cluster_para_motivo)
+            df.loc[mask_aplicar, 'motivo_id'] = motivos_humanos.values
+            df.loc[mask_aplicar, 'origem'] = 'humano'
+            n_sobrescritos = int(mask_aplicar.sum())
+            print(
+                f'🔖 {n_sobrescritos} tickets sobrescritos com rótulo humano'
+            )
+    elif df_humanos is not None and df_vinculo is None:
+        print(
+            '⚠️  Rótulos humanos encontrados, mas sem vínculo ticket->cluster. '
+            'Não foi possível aplicá-los.'
+        )
+
+    # Filtros finais (mantém apenas motivos válidos)
+    df = df[df['motivo_id'].notna() & (df['motivo_id'] != '')].copy()
+    df = df[df['motivo_id'] != 'outros'].copy()
+    df = df[df['motivo_id'] != 'sem_texto_suficiente'].copy()
+
     print(f'📊 Após filtro (texto útil, motivo válido): {len(df)}')
     print(f'   Motivos únicos: {df["motivo_id"].nunique()}')
     print(f'   Categorias únicas: {df["categoria"].nunique()}')
+    print(f'   Rótulos humanos aplicados: {n_sobrescritos}')
 
     return df
 
