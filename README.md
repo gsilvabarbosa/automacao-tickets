@@ -296,4 +296,3 @@ Papel	Nome
 Product Owner	Marilia Amaral Marcondes | Gustavo Henrique Barbosa da Silva
 Mantenedor	Gustavo Henrique Barbosa da Silva
 Equipe	DIO/SPRO — SPPREV
-Repositório: github.com/gustav0barbosa-dev/automacao-tickets

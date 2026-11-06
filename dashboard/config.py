@@ -32,6 +32,7 @@ MENU_PAGINAS = [
     'Tendências',
     'Validação de Motivos',  # Fase 3 — Etapa 2
     'Monitoramento',         # Fase 3 — Etapa 5
+    'Inteligência de Tickets',  # Fase 4 — Nova área de inteligência operacional
 ]
 
 # ==================== STATUS ====================
@@ -75,6 +76,13 @@ MENU_GRUPOS = [
         'icone': 'download',
         'paginas': [
             'Relatórios',
+        ],
+    },
+    {
+        'titulo': 'INTELIGÊNCIA',
+        'icone': 'brain',
+        'paginas': [
+            'Inteligência de Tickets',
         ],
     },
 ]
