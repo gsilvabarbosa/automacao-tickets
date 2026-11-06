@@ -21,13 +21,8 @@ COR_GRID = 'rgba(255,255,255,.05)'
 
 # ==================== MENU ====================
 MENU_PAGINAS = [
-    'Visão Geral',
-    'Tempo de Resposta',
     'SLA + Reincidência',   # Etapa 2 — Pessoa A
     'Produtividade + Roteamento',  # Etapa 3 — Pessoa A
-    'Backlog',
-    'Diagnóstico',   
-    'Tendências',
     'Validação de Motivos',  # Fase 3 — Etapa 2
     'Monitoramento',         # Fase 3 — Etapa 5
     'Inteligência de Tickets',  # Fase 4 — Nova área de inteligência operacional
@@ -50,8 +45,6 @@ MENU_GRUPOS = [
         'titulo': 'ANÁLISE',
         'icone': 'chart-line',
         'paginas': [
-            'Visão Geral',
-            'Tempo de Resposta',
             'SLA + Reincidência',
             'Produtividade + Roteamento',
         ],
@@ -60,18 +53,8 @@ MENU_GRUPOS = [
         'titulo': 'OPERAÇÃO',
         'icone': 'inbox',
         'paginas': [
-            'Backlog',
-            'Diagnóstico',
-            'Tendências',
             'Validação de Motivos',
             'Monitoramento',
-        ],
-    },
-    {
-        'titulo': 'FERRAMENTAS',
-        'icone': 'download',
-        'paginas': [
-            'Relatórios',
         ],
     },
     {
