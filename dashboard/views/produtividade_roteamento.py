@@ -29,8 +29,8 @@ from services.routing_service import (
 from components import (
     kpi, callout, separador, hbar_list, painel_title,
     aplicar_tema_plotly, botao_exportar, legenda_grafico,
-    info_grafico, chart_card, card_com_tabela, global_header,
-    empty_state, insight_card,
+    info_grafico, chart_card, card_com_tabela, card_com_barras,
+    global_header, empty_state, insight_card,
 )
 from lucide import lucide
 from config import COR_BAR, COR_DANGER, COR_TEXT_SEC

@@ -56,7 +56,10 @@ def render(df_filtrado: pd.DataFrame):
 
     # ==================== KPIs GERAIS ====================
     metrica_sla = calcular_metricas_sla(df)
-    metrica_reab = calcular_metricas_reabertura(df, df_movs)
+
+    # Detecta reaberturas a partir das movimentações
+    df_reab = detectar_reaberturas(df_movs)
+    metrica_reab = calcular_metricas_reabertura(df, df_reab)
 
     col1, col2, col3, col4 = st.columns(4)
     with col1:
