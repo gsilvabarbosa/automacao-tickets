@@ -23,11 +23,9 @@ COR_GRID = 'rgba(255,255,255,.05)'
 MENU_PAGINAS = [
     'Visão Geral',
     'Tempo de Resposta',
-    'SLA',
-    'Produtividade',
+    'SLA + Reincidência',   # Etapa 2 — Pessoa A
+    'Produtividade + Roteamento',  # Etapa 3 — Pessoa A
     'Backlog',
-    'Roteamento',
-    'Reincidência',
     'Diagnóstico',   
     'Tendências',
     'Validação de Motivos',  # Fase 3 — Etapa 2
@@ -54,8 +52,8 @@ MENU_GRUPOS = [
         'paginas': [
             'Visão Geral',
             'Tempo de Resposta',
-            'SLA',
-            'Produtividade',
+            'SLA + Reincidência',
+            'Produtividade + Roteamento',
         ],
     },
     {
@@ -63,8 +61,6 @@ MENU_GRUPOS = [
         'icone': 'inbox',
         'paginas': [
             'Backlog',
-            'Roteamento',
-            'Reincidência',
             'Diagnóstico',
             'Tendências',
             'Validação de Motivos',
