@@ -203,9 +203,9 @@ def render(df_filtrado: pd.DataFrame):
             'Dias Médio': 'Dias Médio',
         })
         card_com_tabela(
-            título='Tabela Detalhada',
-            descrição='Produtividade por analista',
-            ícone='bar-chart',
+            titulo='Tabela Detalhada',
+            descricao='Produtividade por analista',
+            icone='bar-chart',
             df=agg_tabela,
             colunas=[
                 {'campo': 'Responsável', 'label': 'Responsável', 'tipo': 'texto'},
