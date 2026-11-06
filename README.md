@@ -102,6 +102,11 @@ python scripts\diagnosticar_tickets.py
 
 # Ver dashboard
 python -m streamlit run dashboard/app.py
+
+# Acesso
+usuário: gustavo
+senha: 123Gustavo
+
 📁 Estrutura do Projeto
 text
 automacao-tickets/
