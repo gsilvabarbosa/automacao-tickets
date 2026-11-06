@@ -143,9 +143,9 @@ def render(df_filtrado: pd.DataFrame):
             for _, r in agg.iterrows()
         ]
         card_com_barras(
-            título='Ranking por Volume',
-            descrição='Barras vermelhas = tempo médio acima de 9 dias',
-            ícone='bar-chart',
+            titulo='Ranking por Volume',
+            descricao='Barras vermelhas = tempo médio acima de 9 dias',
+            icone='bar-chart',
             items=items_ranking,
         )
 
