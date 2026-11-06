@@ -466,6 +466,12 @@ def _render_investigacao(dados):
 
             # Evolução desse assunto específico
             tickets_assunto_copia = tickets_assunto.copy()
+            tickets_assunto_copia['criado_data'] = pd.to_datetime(
+                tickets_assunto_copia['criado_data'], errors='coerce'
+            )
+            tickets_assunto_copia = tickets_assunto_copia[
+                tickets_assunto_copia['criado_data'].notna()
+            ]
             tickets_assunto_copia['mes'] = tickets_assunto_copia['criado_data'].dt.to_period('M')
             evo_assunto = tickets_assunto_copia.groupby('mes').size().reset_index()
             evo_assunto.columns = ['mes', 'qtd']
