@@ -154,7 +154,7 @@ def render(df_filtrado: pd.DataFrame):
         if not agg_plot.empty:
             with chart_card('Volume vs Tempo Médio',
                             'Tamanho do ponto = tickets em aberto · Vermelho = acima de 9 dias',
-                            ícone='activity'):
+                            icone='activity'):
                 fig = go.Figure()
                 for _, r in agg_plot.iterrows():
                     acima = r['Dias Médio'] > 9
