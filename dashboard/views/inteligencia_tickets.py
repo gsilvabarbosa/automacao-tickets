@@ -38,7 +38,13 @@ def carregar_arquivo(nome_pattern):
     )
     if not candidatos:
         return None
-    return pd.read_csv(candidatos[0], encoding='utf-8')
+    try:
+        df = pd.read_csv(candidatos[0], encoding='utf-8')
+        if df.empty:
+            return None
+        return df
+    except (pd.errors.EmptyDataError, Exception):
+        return None
 
 
 def carregar_todos():
