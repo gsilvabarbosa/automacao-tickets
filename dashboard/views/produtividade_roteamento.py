@@ -91,9 +91,9 @@ def render(df_filtrado: pd.DataFrame):
 
     if df_resp.empty:
         empty_state(
-            título='Sem responsáveis identificados',
+            titulo='Sem responsáveis identificados',
             descricao='Nenhum ticket tem responsável no período selecionado.',
-            ícone='users',
+            icone='users',
         )
     else:
         # Converte datas
