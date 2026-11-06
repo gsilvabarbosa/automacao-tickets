@@ -76,40 +76,63 @@ def _limpar_url(url):
 
 @st.cache_resource
 def get_engine():
-    """Cria engine do banco (cached)."""
+    """Cria engine do banco (cached).
+
+    Tenta conectar ao PostgreSQL se DATABASE_URL estiver definido, mas
+    cai automaticamente para SQLite local se a conexão falhar.
+    Se FORCE_SQLITE=1, ignora o banco remoto e usa SQLite diretamente.
+    """
+    # 1. FORCE_SQLITE ignora banco remoto
+    force_sqlite = os.environ.get('FORCE_SQLITE', '').strip() in (
+        '1', 'true', 'yes', 'sim'
+    )
+
     url = _obter_database_url()
     if not url:
         return None
 
-    # SQLite (local)
+    # SQLite (local) - usado quando FORCE_SQLITE ou sem DATABASE_URL
     if url.startswith('sqlite:///'):
         return create_engine(
             url,
             connect_args={'check_same_thread': False},
         )
 
-    # Postgres (Neon/Railway)
-    url = _limpar_url(url)
-    try:
-        engine = create_engine(
-            url,
-            pool_pre_ping=True,
-            pool_recycle=3600,
-            pool_size=5,
-            max_overflow=10,
-            connect_args={
-                'connect_timeout': 30,
-                'sslmode': 'require',
-                'keepalives': 1,
-                'keepalives_idle': 30,
-                'keepalives_interval': 10,
-                'keepalives_count': 5,
-            },
+    # Postgres (Neon/Railway) - tenta conectar, cai para SQLite se falhar
+    if not force_sqlite:
+        url = _limpar_url(url)
+        try:
+            engine = create_engine(
+                url,
+                pool_pre_ping=True,
+                pool_recycle=3600,
+                pool_size=5,
+                max_overflow=10,
+                connect_args={
+                    'connect_timeout': 10,
+                    'sslmode': 'require',
+                },
+            )
+            # Teste real de conexão
+            with engine.connect() as conn:
+                conn.execute('SELECT 1')
+            return engine
+        except Exception as e:
+            st.warning(
+                f'⚠️ Banco remoto inacessível ({type(e).__name__}). '
+                f'Usando SQLite local como fallback.'
+            )
+
+    # Fallback: SQLite local
+    sqlite_path = Path(__file__).resolve().parent.parent / 'dados' / 'tickets.db'
+    if sqlite_path.exists():
+        st.info(f'ℹ️ Usando SQLite local: {sqlite_path.name}')
+        return create_engine(
+            f'sqlite:///{sqlite_path}',
+            connect_args={'check_same_thread': False},
         )
-        return engine
-    except Exception as e:
-        st.error(f'Erro ao criar engine: {e}')
-        return None
+
+    return None
 
 # ==================== CARREGAMENTO ====================
 @st.cache_data(ttl=3600)
