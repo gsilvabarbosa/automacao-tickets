@@ -235,6 +235,7 @@ scripts/diagnosticar_tickets.py	Aplica matriz de verdade
 scripts/verificar_banco.py	Verifica schema
 scripts/verificar_ticket.py <ID>	Detalhes de um ticket
 scripts/explorar_ticket.py --id <ID>	Explora HTML de um ticket
+scripts/exportar_tickets_excel.py	Gera planilha Excel com os tickets do banco
 🎯 Estado Atual
 ✅ Implementado
 Pipeline completo (coleta → enriquecimento → análise)
