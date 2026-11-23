@@ -16,13 +16,8 @@ Funcionalidades:
 import pandas as pd
 import streamlit as st
 
-from components import (
-    kpi, callout, separador, painel_title,
-    botao_exportar, info_grafico,
-)
-from lucide import lucide
-from config import COR_GOLD, COR_SUCCESS, COR_DANGER, COR_WARNING, COR_INFO
-from data import carregar_tickets, carregar_movimentacoes
+from components import kpi, separador
+from data import carregar_movimentacoes
 
 
 def render(df):

@@ -18,6 +18,7 @@ COR_TEXT = '#eae7e1'
 COR_TEXT_SEC = '#9299a6'
 COR_TEXT_TER = '#5c6270'
 COR_GRID = 'rgba(255,255,255,.05)'
+COR_INFO = '#6fa8dc'
 
 # ==================== MENU ====================
 MENU_PAGINAS = [
