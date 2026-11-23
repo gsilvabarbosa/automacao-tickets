@@ -93,6 +93,17 @@ def render(df_filtrado: pd.DataFrame):
             icone='refresh-ccw',
         )
 
+    # Reconciliação do denominador: SLA só é calculável para resolvidos COM previsão
+    excluidos = metrica_sla['em_andamento'] + metrica_sla['sem_previsao']
+    if excluidos > 0:
+        st.caption(
+            f'ℹ️ "Total com SLA" considera apenas tickets resolvidos com previsão válida '
+            f'({metrica_sla["total"]} de {len(df)}). '
+            f'{excluidos} ticket(s) fora do cálculo: '
+            f'{metrica_sla["em_andamento"]} ainda em andamento (não resolvidos) e '
+            f'{metrica_sla["sem_previsao"]} sem previsão definida.'
+        )
+
     separador()
 
     # ==================== SEÇÃO SLA ====================

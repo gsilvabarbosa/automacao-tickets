@@ -39,21 +39,15 @@ def render(df):
 
     total_tickets = len(df)
 
-    # Contadores seguros
+    # Contadores com status normalizado (banco usa 'Em atendimento', 'Fechado', etc.)
     if 'status' in df.columns:
-        tickets_abertos = len(
-            df[df['status'].isin(['Aberto', 'Em Atendimento'])]
-        )
-        tickets_fechados = len(
-            df[df['status'].isin(['Resolvido', 'Fechado'])]
-        )
-        tickets_em_andamento = len(
-            df[df['status'].isin(['Em Atendimento', 'Em Andamento'])]
-        )
+        status_norm = df['status'].astype(str).str.strip().str.lower()
+        encerrados = {'resolvido', 'fechado', 'cancelado', 'duplicado'}
+        tickets_fechados = int(status_norm.isin({'resolvido', 'fechado'}).sum())
+        tickets_abertos = int((~status_norm.isin(encerrados)).sum())
     else:
         tickets_abertos = 0
         tickets_fechados = 0
-        tickets_em_andamento = 0
 
     # SLA
     df_sla = df[
@@ -97,6 +91,16 @@ def render(df):
             f'{sla_estourado}',
             icone='alert-triangle',
             pill_tipo='danger' if sla_estourado > 0 else 'success',
+        )
+
+    # Reconciliação: SLA só é calculável para tickets resolvidos COM previsão
+    total_sla = sla_cumprido + sla_estourado
+    sem_sla = total_tickets - total_sla
+    if sem_sla > 0:
+        st.caption(
+            f'ℹ️ SLA calculado para {total_sla} de {total_tickets} tickets. '
+            f'{sem_sla} ticket(s) fora do cálculo: ainda não resolvidos '
+            f'ou sem previsão de prazo definida.'
         )
 
     separador()
