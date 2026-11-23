@@ -45,6 +45,7 @@ MENU_GRUPOS = [
         'titulo': 'ANÁLISE',
         'icone': 'chart-line',
         'paginas': [
+            'Visão Geral',
             'SLA + Reincidência',
             'Produtividade + Roteamento',
         ],
