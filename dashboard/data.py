@@ -7,6 +7,10 @@ Acesso aos dados do dashboard via HTTP (Neon Data API / PostgREST).
 Não há mais SQLAlchemy, psycopg2 ou engine de banco: todas as consultas
 são GETs autenticados com o JWT obtido em dashboard/auth.py.
 
+A Neon Data API limita cada resposta a 10 MB. Por isso, as tabelas
+grandes são lidas em páginas de 1000 registros (limit/offset) e
+concatenadas em um único DataFrame.
+
 IMPORTANTE — RLS (Row Level Security):
     A Data API do Neon NÃO gerencia permissões sozinha. Ela apenas
     repassa o JWT para o PostgreSQL, que aplica RLS e GRANTs. Para o
@@ -31,6 +35,10 @@ except ImportError:  # importação como pacote (dashboard.data)
 
 
 _TIMEOUT_API = 30
+
+# Tamanho da página na paginação (limite de 10 MB por resposta no Neon).
+_TAMANHO_PAGINA = 1000
+_MAX_PAGINAS = 10000
 
 
 class DataAPIError(Exception):
@@ -139,6 +147,124 @@ def _requisitar(
         ) from exc
 
 
+def _requisitar_pagina(
+    tabela: str,
+    token: str,
+    colunas: str,
+    offset: int,
+) -> list[dict]:
+    """
+    Busca uma única página ({_TAMANHO_PAGINA} registros) da tabela.
+
+    Levanta DataAPIError em falhas de rede/HTTP/resposta inválida.
+    """
+    if not token:
+        raise DataAPIError(
+            '🔒 Sessão não autenticada. Faça login novamente.'
+        )
+
+    url = f'{_data_api_url()}/{tabela}'
+    query = {
+        'select': colunas,
+        'limit': _TAMANHO_PAGINA,
+        'offset': offset,
+    }
+    headers = {
+        'Authorization': f'Bearer {token}',
+        'Accept': 'application/json',
+    }
+
+    try:
+        resposta = requests.get(
+            url,
+            headers=headers,
+            params=query,
+            timeout=_TIMEOUT_API,
+        )
+    except requests.exceptions.Timeout:
+        raise DataAPIError(
+            f'⏱️ Tempo esgotado ao carregar {tabela}. Tente novamente.'
+        ) from None
+    except requests.exceptions.RequestException as exc:
+        raise DataAPIError(
+            f'🌐 Falha de rede ao carregar {tabela}: {exc}'
+        ) from exc
+
+    if resposta.status_code == 401:
+        raise DataAPIError(
+            '🔒 Sessão expirada ou token inválido. Faça login novamente.'
+        )
+    if resposta.status_code == 403:
+        raise DataAPIError(
+            f'🚫 Acesso negado à tabela `{tabela}`. Verifique no Neon se '
+            'há RLS configurado e GRANT SELECT para o role `authenticated`.'
+        )
+    if resposta.status_code not in (200, 206):
+        detalhe = (resposta.text or '')[:200]
+        raise DataAPIError(
+            f'❌ Erro ao carregar {tabela} (HTTP {resposta.status_code}). '
+            f'{detalhe}'
+        )
+
+    try:
+        dados = resposta.json()
+    except ValueError:
+        raise DataAPIError(
+            f'❌ Resposta inválida da Data API ao carregar {tabela}.'
+        ) from None
+
+    if not dados:
+        return []
+
+    if isinstance(dados, dict):
+        if 'message' in dados or 'error' in dados:
+            raise DataAPIError(
+                f'❌ Erro retornado pela Data API em {tabela}: '
+                f'{dados.get("message") or dados.get("error")}'
+            )
+        return [dados]
+
+    if not isinstance(dados, list):
+        raise DataAPIError(
+            f'❌ Resposta inesperada da Data API ao carregar {tabela}.'
+        )
+
+    return dados
+
+
+def _buscar_paginado(
+    tabela: str,
+    token: str,
+    colunas: str = '*',
+) -> pd.DataFrame:
+    """
+    Busca TODOS os registros de uma tabela usando paginação.
+
+    A Neon Data API limita cada resposta a 10 MB; por isso os dados são
+    lidos em páginas de {_TAMANHO_PAGINA} registros (limit/offset) e
+    concatenados em um único DataFrame.
+    """
+    frames: list[pd.DataFrame] = []
+    offset = 0
+
+    for _ in range(_MAX_PAGINAS):
+        pagina = _requisitar_pagina(tabela, token, colunas, offset)
+        if not pagina:
+            break
+
+        frames.append(pd.DataFrame(pagina))
+
+        if len(pagina) < _TAMANHO_PAGINA:
+            break
+
+        offset += _TAMANHO_PAGINA
+
+    if not frames:
+        return pd.DataFrame()
+
+    return pd.concat(frames, ignore_index=True)
+
+
 def _carregar_com_tratamento(funcao, nome: str, *args) -> pd.DataFrame:
     """
     Executa uma função de carga (já cacheada) e traduz falhas em st.error.
@@ -244,7 +370,7 @@ def _converter_mensagens(df: pd.DataFrame) -> pd.DataFrame:
 # ==================== TICKETS ====================
 @st.cache_data(ttl=3600, show_spinner=False)
 def _carregar_tickets_cache(token: str) -> pd.DataFrame:
-    return _converter_tickets(_requisitar('tickets', token))
+    return _converter_tickets(_buscar_paginado('tickets', token))
 
 
 def carregar_tickets() -> pd.DataFrame:
@@ -277,7 +403,7 @@ def carregar_ticket_por_id(ticket_id) -> pd.DataFrame:
 # ==================== MOVIMENTAÇÕES ====================
 @st.cache_data(ttl=300, show_spinner=False)
 def _carregar_movimentacoes_cache(token: str) -> pd.DataFrame:
-    return _converter_movimentacoes(_requisitar('movimentacoes', token))
+    return _converter_movimentacoes(_buscar_paginado('movimentacoes', token))
 
 
 def carregar_movimentacoes() -> pd.DataFrame:
@@ -322,7 +448,7 @@ def carregar_movimentacoes_por_ticket(ticket_id) -> pd.DataFrame:
 # ==================== MENSAGENS ====================
 @st.cache_data(ttl=300, show_spinner=False)
 def _carregar_mensagens_cache(token: str) -> pd.DataFrame:
-    return _converter_mensagens(_requisitar('mensagens', token))
+    return _converter_mensagens(_buscar_paginado('mensagens', token))
 
 
 def carregar_mensagens() -> pd.DataFrame:
@@ -333,7 +459,7 @@ def carregar_mensagens() -> pd.DataFrame:
 # ==================== ANALISTAS ====================
 @st.cache_data(ttl=300, show_spinner=False)
 def _carregar_analistas_cache(token: str) -> pd.DataFrame:
-    return _requisitar('analistas', token)
+    return _buscar_paginado('analistas', token)
 
 
 def carregar_analistas() -> pd.DataFrame:
